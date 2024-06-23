@@ -159,7 +159,7 @@ def generate_fewshot_challenges(num_challenges, train_ratio, output_dir):
 
 if __name__ == "__main__":
     print("Generating ONE MILLION challenges. This will take a couple minutes...")
-    num_challenges = 1000000
+    num_challenges = 10
     train_ratio = 0.95
     output_dir = "bitdata"
     test_kernels()
