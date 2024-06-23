@@ -87,6 +87,13 @@ if __name__ == "__main__":
 
     # Load checkpoint if it exists
     start_epoch = 0
+    if checkpoint_path.exists():
+        checkpoint = torch.load(checkpoint_path)
+        model.load_state_dict(checkpoint["model_state_dict"])
+        optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+        start_epoch = checkpoint["epoch"] + 1
+        print(f"Loaded checkpoint from {checkpoint_path}. Starting from epoch {start_epoch}")
+
     parser = argparse.ArgumentParser(description="Train the model")
     parser.add_argument(
         "--wandb", action="store_true", help="Enable Weights & Biases logging"
@@ -107,7 +114,7 @@ if __name__ == "__main__":
         train_dataset, batch_size=batch_size, shuffle=True, collate_fn=collate_fn
     )
     # Training loop
-    num_epochs = 500
+    num_epochs = 50000
 
     if args.wandb:
         import wandb
