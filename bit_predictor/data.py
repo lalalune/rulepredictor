@@ -37,50 +37,57 @@ def load_and_process_training_data(file_paths):
             data = json.load(f)
 
         train_examples = data["train"]
-        test_example = data["test"]
+        test_examples = data["test"]  # Note: test_examples is a list
 
-        # Create a sequence for the test example
-        context = [START_SEQUENCE_TOKEN]
+        for test_example in test_examples:
+            # Create a sequence for each test example
+            context = [START_SEQUENCE_TOKEN]
 
-        # Add all training examples to the context
-        for train_example in train_examples:
-            context.extend([
+            # Add all training examples to the context
+            for train_example in train_examples:
+                print("train_example['input']")
+                print(train_example['input'])
+                print("train_example['output']")
+                print(train_example['output'])
+                context = context + [
+                    START_EXAMPLE_TOKEN,
+                    START_INPUT_MATRIX_TOKEN,
+                    *train_example['input'],
+                    END_INPUT_MATRIX_TOKEN,
+                    START_OUTPUT_MATRIX_TOKEN,
+                    *train_example['output'],
+                    END_OUTPUT_MATRIX_TOKEN,
+                    END_EXAMPLE_TOKEN
+                ]
+
+            # Left-pad or truncate the context (excluding the test input)
+            context = pad_sequence(context, MAX_CONTEXT_LENGTH - 5, PAD_TOKEN, left_pad=True)
+
+            # Add the test input
+            context = context.tolist() + [
                 START_EXAMPLE_TOKEN,
                 START_INPUT_MATRIX_TOKEN,
-                *train_example['input'],
+                *test_example['input'],
                 END_INPUT_MATRIX_TOKEN,
-                START_OUTPUT_MATRIX_TOKEN,
-                *train_example['output'],
-                END_OUTPUT_MATRIX_TOKEN,
-                END_EXAMPLE_TOKEN
-            ])
+                START_OUTPUT_MATRIX_TOKEN
+            ]
 
-        # Add the test input
-        context.extend([
-            START_EXAMPLE_TOKEN,
-            START_INPUT_MATRIX_TOKEN,
-            *test_example['input'],
-            END_INPUT_MATRIX_TOKEN,
-            START_OUTPUT_MATRIX_TOKEN
-        ])
+            # Create target sequence
+            target = (
+                test_example['output']
+                + [END_OUTPUT_MATRIX_TOKEN, END_EXAMPLE_TOKEN, END_SEQUENCE_TOKEN]
+            )
 
-        # Left-pad or truncate the context
-        context = pad_sequence(context, MAX_CONTEXT_LENGTH, PAD_TOKEN, left_pad=True)
+            # Right-pad or truncate the target
+            target = pad_sequence(target, MAX_PREDICTION_LENGTH, PAD_TOKEN, left_pad=False)
 
-        # Create target sequence
-        target = (
-            test_example['output']
-            + [END_OUTPUT_MATRIX_TOKEN, END_EXAMPLE_TOKEN, END_SEQUENCE_TOKEN]
-        )
-
-        # Right-pad or truncate the target
-        target = pad_sequence(target, MAX_PREDICTION_LENGTH, PAD_TOKEN, left_pad=False)
-
-        processed_data.append((np.array(context), np.array(target)))
+            processed_data.append((np.array(context), np.array(target)))
+            print("context, " + str(context))
+            print("target" + str(target))
 
         print(f"Processed file: {file_path}")
         print(f"  Training examples: {len(train_examples)}")
-        print(f"  Test example: 1")
+        print(f"  Test examples: {len(test_examples)}")
         print(f"  Total processed examples: {len(processed_data)}")
         print("---")
 

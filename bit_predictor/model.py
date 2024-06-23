@@ -4,43 +4,25 @@ from pathlib import Path
 from xformers.components import MultiHeadDispatch
 from xformers.components.attention import ScaledDotProduct
 from .data import NUM_TOKENS, PAD_TOKEN
-from xformers.components.positional_embedding import RotaryEmbedding
+from .encoding import PositionalEncoding
 from torch.utils.checkpoint import checkpoint
 
-
-# Model initialization
-batch_size = 2
-if torch.cuda.is_available():
-    batch_size = 1024
-d_model = 32
-nhead = 4
-num_layers = 6
-dim_feedforward = 128
-max_seq_length = 72
-max_context_length = 64
-max_prediction_length = 8
-dropout_rate = 0.2
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-checkpoint_path = Path("bit_checkpoint.pt")
+from .config import (
+    batch_size,
+    d_model,
+    nhead,
+    num_layers,
+    dim_feedforward,
+    max_seq_length,
+    max_context_length,
+    max_prediction_length,
+    dropout_rate,
+    device,
+    checkpoint_path
+)
 
 
-# sm
-# Model initialization
-# batch_size = 16
-# if torch.cuda.is_available():
-#     batch_size = 16
-# d_model = 64
-# nhead = 4
-# num_layers = 6
-# dim_feedforward = 512
-# max_seq_length = 512
-# max_context_length = 256
-# max_prediction_length = 256
-# dropout_rate = 0.05
-# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-# checkpoint_path = Path("checkpoint_sm.pt")
-
-class DecoderOnlyTransformer(nn.Module):
+class Transformer(nn.Module):
     def __init__(
         self,
         num_tokens,
@@ -59,7 +41,7 @@ class DecoderOnlyTransformer(nn.Module):
         self.nhead = nhead
         self.embedding = nn.Embedding(num_tokens + 1, d_model, padding_idx=PAD_TOKEN)
         self.token_embedding = nn.Embedding(num_tokens, d_model, padding_idx=PAD_TOKEN)
-        self.rotary_emb = RotaryEmbedding(d_model)
+        self.pos_encoding = PositionalEncoding(d_model, max_seq_length)
 
         self.layers = nn.ModuleList(
             [
@@ -105,84 +87,22 @@ class DecoderOnlyTransformer(nn.Module):
             self.d_model,
         ), f"Expected shape {(src.shape[0], src.shape[1], self.d_model)}, but got {x.shape}"
 
+        pos_encoding = self.pos_encoding(x)
+        x = x + pos_encoding.repeat(1, 1, self.d_model // 2)  # Repeat the positional encoding along the feature dimension
+
         batch_size, seq_len, d_model = x.shape
 
         for i, layer in enumerate(self.layers):
-            q, k, v = x, x, x
-
-            q = q.permute(1, 0, 2)
-            k = k.permute(1, 0, 2)
-            assert (
-                q.shape == k.shape == (seq_len, batch_size, d_model)
-            ), f"Expected shape {(seq_len, batch_size, d_model)}, but got q: {q.shape}, k: {k.shape}"
-
-            q, k = self.rotary_emb(q, k)
-            assert (
-                q.shape == k.shape == (1, seq_len, batch_size, d_model)
-            ), f"Expected shape {(1, seq_len, batch_size, d_model)}, but got q: {q.shape}, k: {k.shape}"
-
-            q = q.squeeze(0).permute(1, 0, 2)
-            k = k.squeeze(0).permute(1, 0, 2)
-            assert (
-                q.shape == k.shape == (batch_size, seq_len, d_model)
-            ), f"Expected shape {(batch_size, seq_len, d_model)}, but got q: {q.shape}, k: {k.shape}"
-
-            q = (
-                q.squeeze()
-                .view(batch_size, seq_len, self.nhead, -1)
-                .permute(1, 0, 2, 3)
-            )
-            k = (
-                k.squeeze()
-                .view(batch_size, seq_len, self.nhead, -1)
-                .permute(1, 0, 2, 3)
-            )
-            v = (
-                v.squeeze()
-                .view(batch_size, seq_len, self.nhead, -1)
-                .permute(1, 0, 2, 3)
+            x = layer["self_attn"](
+                x,
+                x,
+                x,
             )
 
-            assert (
-                q.shape
-                == k.shape
-                == v.shape
-                == (seq_len, batch_size, self.nhead, d_model // self.nhead)
-            ), f"Expected shape {(seq_len, batch_size, self.nhead, d_model // self.nhead)}, but got q: {q.shape}, k: {k.shape}, v: {v.shape}"
-
-            q = q.permute(1, 0, 2, 3).contiguous().view(batch_size, seq_len, -1)
-            k = k.permute(1, 0, 2, 3).contiguous().view(batch_size, seq_len, -1)
-            v = v.permute(1, 0, 2, 3).contiguous().view(batch_size, seq_len, -1)
-
-            attn_output = checkpoint(layer["self_attn"], q, k, v)
-
-            assert attn_output.shape == (
-                batch_size,
-                seq_len,
-                d_model,
-            ), f"Expected shape {(batch_size, seq_len, d_model)}, but got {attn_output.shape}"
-
-            x = layer["norm1"](x + attn_output)
-            assert x.shape == (
-                batch_size,
-                seq_len,
-                d_model,
-            ), f"Expected shape {(batch_size, seq_len, d_model)}, but got {x.shape}"
+            x = layer["norm1"](x)
 
             ff_output = checkpoint(layer["ff"], x)
-
-            assert ff_output.shape == (
-                batch_size,
-                seq_len,
-                d_model,
-            ), f"Expected shape {(batch_size, seq_len, d_model)}, but got {ff_output.shape}"
-
             x = layer["norm2"](x + ff_output)
-            assert x.shape == (
-                batch_size,
-                seq_len,
-                d_model,
-            ), f"Expected shape {(batch_size, seq_len, d_model)}, but got {x.shape}"
 
         output = self.fc_out(x)
         assert output.shape == (
@@ -194,7 +114,7 @@ class DecoderOnlyTransformer(nn.Module):
         return output
 
 
-model = DecoderOnlyTransformer(
+model = Transformer(
     NUM_TOKENS,
     d_model,
     nhead,
@@ -207,7 +127,7 @@ model = DecoderOnlyTransformer(
 
 def test_model_with_zeros():
     # Create a model instance
-    model = DecoderOnlyTransformer(
+    model = Transformer(
         NUM_TOKENS,
         d_model,
         nhead,

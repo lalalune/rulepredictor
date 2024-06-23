@@ -12,7 +12,8 @@ from .data import (
     evaluating_file_paths,
     evaluating_data,
 )
-from .model import model, checkpoint_path, device
+from .model import model
+from .config import checkpoint_path, device
 
 # import wandb
 

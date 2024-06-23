@@ -2,8 +2,8 @@ import torch
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 import argparse
-from .model import (
-    model,
+from .model import model
+from .config import (
     checkpoint_path,
     d_model,
     nhead,

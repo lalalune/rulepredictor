@@ -1,29 +1,118 @@
 import json
-import os
-import random
 from multiprocessing import Pool
+import os
+import numpy as np
+import random
+
+def set_seed(seed):
+    random.seed(seed)
+    np.random.seed(seed)
 
 def generate_binary_string():
     return [random.choice([0, 1]) for _ in range(4)]
 
-def apply_flip_rule(binary_string, position):
-    transformed = binary_string.copy()
-    transformed[position] = 1 - transformed[position]  # Flip the bit
-    return transformed
+def identity_kernel():
+    return np.eye(4)
 
-def generate_example(position=None):
-    if position is None:
-        position = random.randint(0, 3)  # Choose a position to flip if not provided
-    training_examples = []
-    for _ in range(3):
+def flip_all_kernel():
+    return np.ones((4, 4)) - np.eye(4)
+
+def shift_left_kernel():
+    return np.roll(np.eye(4), -1, axis=1)
+
+def shift_right_kernel():
+    return np.roll(np.eye(4), 1, axis=1)
+
+def mirror_kernel():
+    return np.fliplr(np.eye(4))
+
+def swap_middle_kernel():
+    kernel = np.eye(4)
+    kernel[1:3, 1:3] = np.fliplr(np.eye(2))
+    return kernel
+
+def apply_kernel(binary_string, kernel):
+    input_array = np.array(binary_string)
+    output_array = np.dot(kernel, input_array) % 2
+    return output_array.tolist()
+
+def test_kernels(seed=42):
+    set_seed(seed)
+    test_inputs = [
+        [1, 0, 1, 0],
+        [0, 1, 1, 1],
+        [1, 1, 0, 0],
+        [0, 0, 0, 1]
+    ]
+
+    kernels = {
+        "IDENTITY": identity_kernel(),
+        "FLIP_ALL": flip_all_kernel(),
+        "SHIFT_LEFT": shift_left_kernel(),
+        "SHIFT_RIGHT": shift_right_kernel(),
+        "MIRROR": mirror_kernel(),
+        "SWAP_MIDDLE": swap_middle_kernel()
+    }
+
+    inverse_kernels = {
+        "IDENTITY": identity_kernel(),
+        "FLIP_ALL": flip_all_kernel(),
+        "SHIFT_LEFT": shift_right_kernel(),  # Inverse of SHIFT_LEFT is SHIFT_RIGHT
+        "SHIFT_RIGHT": shift_left_kernel(),  # Inverse of SHIFT_RIGHT is SHIFT_LEFT
+        "MIRROR": mirror_kernel(),
+        "SWAP_MIDDLE": swap_middle_kernel()
+    }
+
+    def assert_operation(name, kernel, inverse_kernel, input_string):
+        output = apply_kernel(input_string, kernel)
+        inverse_output = apply_kernel(output, inverse_kernel)
+        assert inverse_output == input_string, f"{name} inverse failed: input {input_string}, got {inverse_output}"
+        print(f"{name}: passed")
+
+    for name, kernel in kernels.items():
+        inverse_kernel = inverse_kernels[name]
+        for input_string in test_inputs:
+            assert_operation(name, kernel, inverse_kernel, input_string)
+
+    print("All kernel tests passed!")
+
+
+def generate_example(seed=None):
+    if seed is not None:
+        set_seed(seed)
+    
+    kernels = {
+        "IDENTITY": identity_kernel,
+        "FLIP_ALL": flip_all_kernel,
+        "SHIFT_LEFT": shift_left_kernel,
+        "SHIFT_RIGHT": shift_right_kernel,
+        "MIRROR": mirror_kernel,
+        "SWAP_MIDDLE": swap_middle_kernel
+    }
+    
+    rule = random.choice(list(kernels.keys()))
+    kernel = kernels[rule]()
+    
+    num_train = random.randint(2, 4)
+    num_test = random.randint(1, 2)
+    
+    train_examples = []
+    for _ in range(num_train):
         input_string = generate_binary_string()
-        output_string = apply_flip_rule(input_string, position)
-        training_examples.append({"input": input_string, "output": output_string})
-    test_input = generate_binary_string()
-    test_output = apply_flip_rule(test_input, position)
+        output_string = apply_kernel(input_string, kernel)
+        train_examples.append({"input": input_string, "output": output_string})
+    
+    test_examples = []
+    for _ in range(num_test):
+        input_string = generate_binary_string()
+        output_string = apply_kernel(input_string, kernel)
+        test_examples.append({"input": input_string, "output": output_string})
+    
     return {
-        'train': training_examples,
-        'test': {'input': test_input, 'output': test_output}
+        'train': train_examples,
+        'test': test_examples,
+        'kernel': kernel.tolist(),
+        'rule': rule
     }
 
 def generate_single_challenge(args):
@@ -67,9 +156,13 @@ def generate_fewshot_challenges(num_challenges, train_ratio, output_dir):
     
     print(f"Generated {len(challenge_files)} challenge files in {output_dir}")
 
+
 if __name__ == "__main__":
+    print("Generating ONE MILLION challenges. This will take a couple minutes...")
     num_challenges = 1000000
     train_ratio = 0.95
     output_dir = "bitdata"
+    test_kernels()
     generate_fewshot_challenges(num_challenges, train_ratio, output_dir)
     print(f"Binary pattern challenges generated and saved in {output_dir}")
+    
