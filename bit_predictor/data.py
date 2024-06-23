@@ -13,7 +13,7 @@ END_OUTPUT_MATRIX_TOKEN = 7
 START_SEQUENCE_TOKEN = 8
 END_SEQUENCE_TOKEN = 9
 PAD_TOKEN = 10
-NUM_TOKENS = 11  # Updated to include PAD_TOKEN
+NUM_TOKENS = 11
 
 MAX_CONTEXT_LENGTH = 64
 MAX_PREDICTION_LENGTH = 8
@@ -32,7 +32,6 @@ def load_and_process_training_data(file_paths):
     processed_data = []
 
     for file_path in file_paths:
-        print("loading " + file_path)
         with open(file_path, "r") as f:
             data = json.load(f)
 
@@ -45,10 +44,6 @@ def load_and_process_training_data(file_paths):
 
             # Add all training examples to the context
             for train_example in train_examples:
-                print("train_example['input']")
-                print(train_example['input'])
-                print("train_example['output']")
-                print(train_example['output'])
                 context = context + [
                     START_EXAMPLE_TOKEN,
                     START_INPUT_MATRIX_TOKEN,
@@ -62,7 +57,6 @@ def load_and_process_training_data(file_paths):
 
             # Left-pad or truncate the context (excluding the test input)
             context = pad_sequence(context, MAX_CONTEXT_LENGTH - 5, PAD_TOKEN, left_pad=True)
-
             # Add the test input
             context = context.tolist() + [
                 START_EXAMPLE_TOKEN,
@@ -82,14 +76,6 @@ def load_and_process_training_data(file_paths):
             target = pad_sequence(target, MAX_PREDICTION_LENGTH, PAD_TOKEN, left_pad=False)
 
             processed_data.append((np.array(context), np.array(target)))
-            print("context, " + str(context))
-            print("target" + str(target))
-
-        print(f"Processed file: {file_path}")
-        print(f"  Training examples: {len(train_examples)}")
-        print(f"  Test examples: {len(test_examples)}")
-        print(f"  Total processed examples: {len(processed_data)}")
-        print("---")
 
     print(f"Total processed data points: {len(processed_data)}")
     return processed_data
